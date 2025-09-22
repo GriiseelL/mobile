@@ -59,19 +59,19 @@ export default function TabLayout() {
         options={{
           title: "Cashier",
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="paperplane.fill" color={color} />
+            <IconSymbol size={28} name="point-of-sale" color={color} />
           ),
         }}
       />
-      {/* <Tabs.Screen
-        name="TransactionHistory"
+      <Tabs.Screen
+        name="AccountScreen"
         options={{
-          title: "Cashier",
+          title: "Account",
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="paperplane.fill" color={color} />
+            <IconSymbol size={28} name="person" color={color} />
           ),
         }}
-      /> */}
+      />
     </Tabs>
   );
 }

@@ -1,6 +1,9 @@
 import api from "@/src/api/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { ToastAndroid } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -13,10 +16,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ThermalPrinterModule from "react-native-thermal-printer";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { WebView } from "react-native-webview";
 
 const CashierScreen = ({ navigation }) => {
+  const router = useRouter();
+  const [user, setUser] = useState(null); // ✅ state user
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("Semua");
@@ -27,11 +33,56 @@ const CashierScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [receiptHtml, setReceiptHtml] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
+  const { url, transaction_code } = useLocalSearchParams();
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchProducts();
+      fetchCategories();
+
+      const loadUser = async () => {
+        const storedUser = await AsyncStorage.getItem("user");
+        if (storedUser) {
+          setUser(JSON.parse(storedUser));
+        }
+      };
+      loadUser();
+    }, [])
+  );
+
+  // ✅ Ambil detail transaksi by transaction_code
   useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-  }, []);
+    const fetchTransaction = async () => {
+      if (!transaction_code) return;
+
+      try {
+        const token = await AsyncStorage.getItem("token");
+        const res = await api.get(`/transactions/${transaction_code}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const trx = res.data.transaction;
+
+        if (trx.status === "PAID") {
+          // 🔹 ambil struk dari backend
+          const receiptRes = await api.post(
+            "/api/xendit/struk/cash",
+            { transaction_code: trx.transaction_code },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+
+          setReceiptHtml(receiptRes.data.data);
+          setShowReceipt(true);
+        } else if (trx.status === "EXPIRED") {
+          Alert.alert("Info", "Transaksi sudah kadaluarsa.");
+        }
+      } catch (err) {
+        console.log("Fetch error:", err.response?.data || err);
+      }
+    };
+
+    fetchTransaction();
+  }, [transaction_code]);
 
   const fetchProducts = async () => {
     try {
@@ -99,7 +150,11 @@ const CashierScreen = ({ navigation }) => {
 
     if (existingItem) {
       if (existingItem.quantity >= product.stock) {
-        Alert.alert("Stok Tidak Cukup", `Stok tersisa: ${product.stock}`);
+        ToastAndroid.showWithGravity(
+          `Stok tidak cukup, tersisa: ${product.stock}`,
+          ToastAndroid.SHORT,
+          ToastAndroid.CENTER // bisa diganti TOP / BOTTOM
+        );
         return;
       }
       setCart(
@@ -112,6 +167,12 @@ const CashierScreen = ({ navigation }) => {
     } else {
       setCart([...cart, { ...product, quantity: 1 }]);
     }
+
+    ToastAndroid.showWithGravity(
+      `${product.name} berhasil ditambahkan ke keranjang 🛒`,
+      ToastAndroid.SHORT,
+      ToastAndroid.BOTTOM // muncul di bawah tengah layar
+    );
   };
 
   const updateCartQuantity = (productId, newQuantity) => {
@@ -209,6 +270,72 @@ const CashierScreen = ({ navigation }) => {
   //   }
   // };
 
+  // const processTransaction = async () => {
+  //   if (cart.length === 0) {
+  //     Alert.alert(
+  //       "Keranjang Kosong",
+  //       "Tambahkan produk ke keranjang terlebih dahulu"
+  //     );
+  //     return;
+  //   }
+
+  //   setLoading(true);
+  //   try {
+  //     const token = await AsyncStorage.getItem("token");
+
+  //     const transactionData = {
+  //       metode_pembayaran: paymentMethod,
+  //       items: cart.map((item) => ({
+  //         id_product: item.id,
+  //         quantity: item.quantity,
+  //         price: item.price,
+  //         name: item.name,
+  //       })),
+  //     };
+
+  //     if (paymentMethod === "cash") {
+  //       // langsung proses seperti sekarang
+  //       const response = await api.post(
+  //         "/api/transaction/store",
+  //         transactionData,
+  //         {
+  //           headers: { Authorization: `Bearer ${token}` },
+  //         }
+  //       );
+
+  //       if (response.data.success) {
+  //         Alert.alert("Sukses", "Transaksi tunai berhasil");
+  //         setCart([]);
+  //         setShowCart(false);
+  //         fetchProducts();
+  //       }
+  //     } else {
+  //       // 🔹 kalau non-cash → pakai Xendit
+  //       const response = await api.post("/api/xendit/store", transactionData, {
+  //         headers: { Authorization: `Bearer ${token}` },
+  //       });
+
+  //       if (response.data.success) {
+  //         // arahkan ke WebView untuk bayar
+  //         router.push({
+  //           pathname: "/PaymentScreen",
+  //           params: {
+  //             url: response.data.payment_url,
+  //             transaction_code: response.data.transaction_code,
+  //           },
+  //         });
+  //       }
+  //     }
+  //   } catch (error) {
+  //     console.error("Transaction error:", error);
+  //     Alert.alert("Error", "Gagal memproses transaksi");
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+  // ✅ Proses transaksi baru
+  // ✅ Updated processTransaction function
   const processTransaction = async () => {
     if (cart.length === 0) {
       Alert.alert(
@@ -232,44 +359,288 @@ const CashierScreen = ({ navigation }) => {
         })),
       };
 
-      const response = await api.post(
-        "/api/transaction/store",
-        transactionData,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (response.data.success) {
-        // Panggil endpoint struk
-        const receiptRes = await api.post(
-          "/api/xendit/struk/cash",
-          {
-            transaction_code: response.data.transaction_code,
-            items: cart,
-            subtotal: getTotalAmount(),
-            tax: getTotalAmount() * 0.12,
-            total: getTotalAmount() * 1.12,
-            seller: "Kasir",
-          },
+      if (paymentMethod === "cash") {
+        // 🔹 Simpan transaksi cash
+        const response = await api.post(
+          "/api/transaction/store",
+          transactionData,
           {
             headers: { Authorization: `Bearer ${token}` },
           }
         );
 
-        setReceiptHtml(receiptRes.data.data);
-        setShowReceipt(true);
+        if (response.data.success) {
+          const trxCode = response.data.transaction_code;
 
-        setCart([]);
-        setPaymentMethod("cash");
-        setShowCart(false);
-        fetchProducts();
+          // 🔹 Hitung total dengan pajak
+          const subtotal = getTotalAmount();
+          const tax = subtotal * 0.12;
+          const total = subtotal + tax;
+
+          // 🔹 Kirim data lengkap ke backend untuk generate struk
+          const receiptResponse = await api.post(
+            "/api/xendit/struk/cash",
+            {
+              transaction_code: trxCode,
+              items: cart.map((item) => ({
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+              })),
+              subtotal: subtotal,
+              tax: tax,
+              total: total,
+              seller: user?.name || "Kasir", // ambil dari state user
+            },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+
+          // ✅ ambil dari 'data'
+          const htmlStruk = receiptResponse.data.data;
+
+          if (htmlStruk) {
+            setReceiptHtml(htmlStruk);
+            setShowReceipt(true);
+          } else {
+            Alert.alert("Error", "Struk tidak ditemukan");
+          }
+
+          Alert.alert("Sukses", "Transaksi tunai berhasil");
+          setCart([]);
+          setShowCart(false);
+          fetchProducts();
+        }
+      } else {
+        // 🔹 transaksi non-cash → redirect ke WebView
+        const response = await api.post("/api/xendit/store", transactionData, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (response.data.success) {
+          router.push({
+            pathname: "/PaymentScreen",
+            params: {
+              url: response.data.payment_url,
+              transaction_code: response.data.transaction_code,
+            },
+          });
+        }
       }
     } catch (error) {
-      console.error("Transaction error:", error);
+      console.error("Transaction error:", error.response?.data || error);
       Alert.alert("Error", "Gagal memproses transaksi");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ Updated useEffect untuk handle struk dari payment
+  // ✅ Debug dan perbaikan useEffect
+  // ✅ Debug dan perbaikan useEffect
+  // ✅ Perbaikan useEffect dengan endpoint yang benar
+  useEffect(() => {
+    const fetchTransaction = async () => {
+      if (!transaction_code) return;
+
+      try {
+        const token = await AsyncStorage.getItem("token");
+        console.log("🔍 Fetching transaction with code:", transaction_code);
+
+        // ✅ Gunakan endpoint yang sesuai dengan route Laravel
+        const res = await api.get(
+          `/api/detail-transaction/${transaction_code}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        console.log("📥 API Response:", res.data);
+        console.log("📄 Response status:", res.status);
+
+        // ✅ Check berbagai kemungkinan struktur response
+        let trx = null;
+
+        // Kemungkinan 1: res.data.transaction
+        if (res.data && res.data.transaction) {
+          trx = res.data.transaction;
+        }
+        // Kemungkinan 2: res.data.data
+        else if (res.data && res.data.data) {
+          trx = res.data.data;
+        }
+        // Kemungkinan 3: res.data langsung
+        else if (res.data && res.data.transaction_code) {
+          trx = res.data;
+        }
+
+        console.log("💰 Transaction object:", trx);
+
+        if (!trx) {
+          console.log("❌ Transaction object not found in response");
+          Alert.alert("Error", "Data transaksi tidak ditemukan");
+          return;
+        }
+
+        console.log("📊 Transaction status:", trx.status);
+
+        if (
+          trx.status === "PAID" ||
+          trx.status === "paid" ||
+          trx.status === "COMPLETED"
+        ) {
+          console.log("✅ Transaction is PAID, generating receipt...");
+
+          // Ambil items dari berbagai kemungkinan struktur
+          const transactionItems =
+            trx.items ||
+            trx.transaction_items ||
+            trx.transactionItems ||
+            trx.details ||
+            [];
+
+          console.log("📦 Transaction items:", transactionItems);
+
+          if (transactionItems.length === 0) {
+            Alert.alert("Error", "Detail item transaksi tidak ditemukan");
+            return;
+          }
+
+          // Hitung total
+          const subtotal = transactionItems.reduce((sum, item) => {
+            const price = item.price || item.product?.price || 0;
+            const quantity = item.quantity || item.qty || 0;
+            return sum + price * quantity;
+          }, 0);
+
+          const tax = subtotal * 0.12;
+          const total = subtotal + tax;
+
+          console.log("💵 Calculated totals:", { subtotal, tax, total });
+
+          // Generate receipt
+          const receiptRes = await api.post(
+            "/api/xendit/struk/cash",
+            {
+              transaction_code: trx.transaction_code,
+              items: transactionItems.map((item) => ({
+                name:
+                  item.product?.name ||
+                  item.name ||
+                  item.product_name ||
+                  "Unknown Product",
+                price: item.price || item.product?.price || 0,
+                quantity: item.quantity || item.qty || 0,
+              })),
+              subtotal: subtotal,
+              tax: tax,
+              total: total,
+              seller: user?.name || "Kasir",
+              payment_method:
+                trx.metode_pembayaran || trx.payment_method || "xendit",
+            },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+
+          console.log("🧾 Receipt response:", receiptRes.data);
+
+          if (receiptRes.data && receiptRes.data.data) {
+            setReceiptHtml(receiptRes.data.data);
+            setShowReceipt(true);
+
+            // Bersihkan cart jika ada
+            setCart([]);
+            setShowCart(false);
+            fetchProducts();
+
+            Alert.alert("Sukses", "Pembayaran berhasil!");
+          } else {
+            Alert.alert("Error", "Gagal generate struk");
+          }
+        } else if (trx.status === "EXPIRED" || trx.status === "expired") {
+          Alert.alert("Info", "Transaksi sudah kadaluarsa.");
+        } else if (trx.status === "PENDING" || trx.status === "pending") {
+          Alert.alert("Info", "Pembayaran masih dalam proses.");
+        } else {
+          console.log("ℹ️ Transaction status:", trx.status);
+          Alert.alert("Info", `Status transaksi: ${trx.status}`);
+        }
+      } catch (err) {
+        console.error("❌ Fetch transaction error details:", err);
+        console.error("❌ Error response:", err.response?.data);
+        console.error("❌ Error status:", err.response?.status);
+        console.error("❌ Error message:", err.message);
+
+        if (err.response?.status === 404) {
+          Alert.alert("Error", "Transaksi tidak ditemukan");
+        } else if (err.response?.data?.message) {
+          Alert.alert("Error", err.response.data.message);
+        } else {
+          Alert.alert("Error", "Gagal mengambil data transaksi");
+        }
+      }
+    };
+
+    fetchTransaction();
+  }, [transaction_code]);
+
+  // ✅ Function untuk debugging API endpoint yang sudah diperbai
+
+  const [devices, setDevices] = useState([]);
+  const [connected, setConnected] = useState(false);
+
+  const scanDevices = async () => {
+    try {
+      const list = await ThermalPrinterModule.getDeviceList(); // ✅ benar
+      console.log("Printer ditemukan:", list);
+      setDevices(list);
+      if (list.length === 0) {
+        Alert.alert("Info", "Tidak ada printer ditemukan");
+      }
+    } catch (err) {
+      console.error("❌ Scan error:", err);
+      Alert.alert("Error", "Gagal scan printer");
+    }
+  };
+  // console.log("ThermalPrinterModule:", ThermalPrinterModule);
+
+  const connectToPrinter = async (address) => {
+    try {
+      await ThermalPrinterModule.connectBluetooth(address);
+      setConnected(true);
+      Alert.alert("Sukses", "Printer terhubung");
+    } catch (err) {
+      Alert.alert("Error", "Tidak bisa connect ke printer");
+    }
+  };
+
+  const scanPrinters = async () => {
+    try {
+      const devices = await ThermalPrinterModule.getBluetoothDeviceList();
+      console.log("📍 Found devices:", devices);
+    } catch (err) {
+      console.error("❌ Scan error:", err);
+    }
+  };
+
+  // Print ke printer bluetooth
+  const printReceipt = async (macAddress: string) => {
+    try {
+      await ThermalPrinterModule.printBluetooth({
+        macAddress, // alamat printer yang dipilih dari hasil scan
+        payload: `
+        *** TELAVA POS ***
+        ==================
+        Item A     Rp10.000
+        Item B     Rp15.000
+        ------------------
+        Total      Rp25.000
+        ==================
+        Terima Kasih!
+      `,
+      });
+      console.log("✅ Print success!");
+    } catch (err) {
+      console.error("❌ Print error:", err);
     }
   };
 
@@ -588,6 +959,48 @@ const CashierScreen = ({ navigation }) => {
             </TouchableOpacity>
           </View>
           <WebView source={{ html: receiptHtml }} style={{ flex: 1 }} />
+        </View>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-around",
+            padding: 10,
+          }}
+        >
+          <TouchableOpacity
+            style={{ backgroundColor: "#3b82f6", padding: 12, borderRadius: 8 }}
+            onPress={scanPrinters}
+          >
+            <Text style={{ color: "#fff" }}>Scan Printer</Text>
+          </TouchableOpacity>
+
+          {connected ? (
+            <TouchableOpacity
+              style={{
+                backgroundColor: "#10b981",
+                padding: 12,
+                borderRadius: 8,
+              }}
+              onPress={printReceipt}
+            >
+              <Text style={{ color: "#fff" }}>Print Struk</Text>
+            </TouchableOpacity>
+          ) : (
+            devices.map((dev, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={{
+                  backgroundColor: "#f59e0b",
+                  padding: 12,
+                  borderRadius: 8,
+                  marginTop: 5,
+                }}
+                onPress={() => connectToPrinter(dev.address)}
+              >
+                <Text style={{ color: "#fff" }}>{dev.name}</Text>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </Modal>
     </View>

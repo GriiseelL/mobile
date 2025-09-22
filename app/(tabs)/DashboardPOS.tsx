@@ -17,8 +17,8 @@ import api from "../../src/api/api";
 // Import vector icons - pilih salah satu sesuai library yang digunakan
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import { useEffect } from "react";
-import IconAntDesign from "react-native-vector-icons/AntDesign";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback } from "react";import IconAntDesign from "react-native-vector-icons/AntDesign";
 import IconFeather from "react-native-vector-icons/Feather";
 import IconCommunity from "react-native-vector-icons/MaterialCommunityIcons";
 import Icon from "react-native-vector-icons/MaterialIcons";
@@ -73,11 +73,13 @@ const DashboardPOS = ({ navigation }) => {
   const [categories, setCategories] = useState([]);
   const [totalProducts, setTotalProducts] = useState(0);
 
-  useEffect(() => {
+useFocusEffect(
+  useCallback(() => {
     fetchCategories();
     fetchProducts();
     fetchTransactions();
-  }, []);
+  }, [])
+);
 
   const fetchCategories = async () => {
     try {

@@ -1,45 +1,58 @@
-import React, { useState, useRef } from "react";
+import api from "@/src/api/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router"; // ⬅️ tambahin ini
+import React, { useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
+  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
-  StatusBar,
+  Image,
   Modal,
-  ActivityIndicator,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import LinearGradient from "react-native-linear-gradient";
+import { launchCamera, launchImageLibrary } from "react-native-image-picker";
 import Icon from "react-native-vector-icons/MaterialIcons";
-import { launchImageLibrary, launchCamera } from "react-native-image-picker";
 
 const { width } = Dimensions.get("window");
 
-const AccountScreen = () => {
+const AccountScreen = ({ userId = null, navigation }) => {
   const [user, setUser] = useState({
-    name: "Grizelda Agnurindra",
-    email: "grizelda@example.com",
-    phone: "+62 812-3456-7890",
-    photo: "https://i.pravatar.cc/300",
-    bio: "Mobile Developer & UI/UX Enthusiast",
-    location: "Surabaya, Indonesia",
+    id: null,
+    name: "",
+    email: "",
+    phone: "",
+    photo: null,
+    bio: "",
+    location: "",
+    role_id: null,
   });
 
+  const [originalUser, setOriginalUser] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [validationErrors, setValidationErrors] = useState({});
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
-  React.useEffect(() => {
+  // Load user data on component mount
+  useEffect(() => {
+    loadUserProfile();
+    startAnimations();
+  }, []);
+
+  const startAnimations = () => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -58,7 +71,113 @@ const AccountScreen = () => {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  };
+
+  const loadUserProfile = async () => {
+    try {
+      setIsLoadingProfile(true);
+
+      // Ambil data user dari AsyncStorage
+      const authUser = await AsyncStorage.getItem("user");
+      if (!authUser) {
+        Alert.alert("Error", "User tidak ditemukan");
+        return;
+      }
+
+      const parsedUser = JSON.parse(authUser);
+      const userUuid = parsedUser.uuid; // pakai UUID, bukan ID
+
+      console.log("🔎 Load profile UUID:", userUuid);
+
+      // Request profile dari backend
+      const response = await api.get(`/api/master/users/${userUuid}`);
+
+      if (response.data && response.data.user) {
+        const userData = response.data.user;
+
+        const transformedUser = {
+          id: userData.uuid, // simpan UUID di sini
+          name: userData.name || "",
+          email: userData.email || "",
+          phone: userData.phone || "",
+          photo: userData.photo
+            ? `${api.defaults.baseURL}/storage/${userData.photo}`
+            : "https://i.pravatar.cc/300",
+          role_id: userData.role_id,
+        };
+
+        setUser(transformedUser);
+        setOriginalUser({ ...transformedUser });
+      }
+    } catch (error) {
+      console.error("Error loading profile:", error?.response || error);
+      Alert.alert("Error", "Gagal memuat profil pengguna");
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      "Konfirmasi Logout",
+      "Apakah Anda yakin ingin keluar dari aplikasi?",
+      [
+        {
+          text: "Batal",
+          style: "cancel",
+        },
+        {
+          text: "Ya, Logout",
+          style: "destructive",
+          onPress: performLogout,
+        },
+      ]
+    );
+  };
+
+  const performLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+
+      // Optional: panggil API logout
+      try {
+        await api.post("/api/auth/logout");
+      } catch (apiError) {
+        console.log("Logout API error (ignored):", apiError);
+      }
+
+      // Hapus semua data dari storage
+      await AsyncStorage.multiRemove([
+        "user",
+        "token",
+        "userToken",
+        "authToken",
+        "isLoggedIn",
+      ]);
+
+      // Reset state user
+      setUser({
+        id: null,
+        name: "",
+        email: "",
+        phone: "",
+        photo: null,
+        bio: "",
+        location: "",
+        role_id: null,
+      });
+
+      // Redirect ke halaman login
+      router.replace("/Login");
+
+      Alert.alert("Berhasil", "Anda telah logout dari aplikasi");
+    } catch (error) {
+      console.error("Logout error:", error);
+      Alert.alert("Error", "Terjadi kesalahan saat logout");
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const validateForm = () => {
     const errors = {};
@@ -75,28 +194,67 @@ const AccountScreen = () => {
     const phoneRegex = /^(\+62|62|0)[0-9]{9,13}$/;
     if (!phoneRegex.test(user.phone.replace(/[-\s]/g, ""))) {
       errors.phone = "Format nomor telepon tidak valid";
-    }
+    } 
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
   const handleSave = async () => {
-    if (!validateForm()) {
-      Alert.alert("Error", "Mohon periksa kembali data yang diisi");
-      return;
-    }
-
     setIsLoading(true);
 
-    // Simulasi API call
-    setTimeout(() => {
+    try {
+      const formData = new FormData();
+
+      // selalu kirim data wajib
+      formData.append("name", user.name || "");
+      formData.append("email", user.email || "");
+      formData.append("phone", user.phone || "");
+      if (user.role_id) {
+        formData.append("role_id", user.role_id.toString());
+      }
+
+      // kalau ada foto baru (hasil dari kamera/galeri), kirim
+      if (user.photo && user.photo.startsWith("file://")) {
+        formData.append("photo", {
+          uri: user.photo,
+          type: "image/jpeg",
+          name: `photo_${Date.now()}.jpg`,
+        });
+      }
+
+      const response = await api.post(
+        `/api/master/users/${user.id}?_method=PUT`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      if (response.data.success) {
+        const updatedUser = response.data.user;
+        setUser({
+          ...user,
+          photo: updatedUser.photo
+            ? `${api.defaults.baseURL}/storage/${updatedUser.photo}`
+            : user.photo,
+        });
+        setOriginalUser({ ...user });
+        setIsEditing(false);
+        setValidationErrors({});
+        Alert.alert("Berhasil 🎉", "Profil berhasil diperbarui");
+      }
+    } catch (error) {
+      console.error("Error updating profile:", error?.response || error);
+      let msg = "Gagal memperbarui profil";
+      if (error.response?.data?.errors) {
+        setValidationErrors(error.response.data.errors);
+        msg = "Mohon periksa kembali data yang diisi";
+      } else if (error.response?.data?.message) {
+        msg = error.response.data.message;
+      }
+      Alert.alert("Error", msg);
+    } finally {
       setIsLoading(false);
-      setIsEditing(false);
-      Alert.alert("Berhasil! 🎉", "Profil berhasil diperbarui", [
-        { text: "OK", style: "default" },
-      ]);
-    }, 1500);
+    }
   };
 
   const handlePhotoSelection = (source) => {
@@ -121,6 +279,15 @@ const AccountScreen = () => {
     } else {
       launchImageLibrary(options, callback);
     }
+  };
+
+  const handleCancel = () => {
+    // Reset to original data
+    if (originalUser) {
+      setUser({ ...originalUser });
+    }
+    setIsEditing(false);
+    setValidationErrors({});
   };
 
   const PhotoModal = () => (
@@ -201,25 +368,44 @@ const AccountScreen = () => {
     </Animated.View>
   );
 
+  // Show loading indicator while fetching profile
+  if (isLoadingProfile) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#4f46e5" />
+        <Text style={styles.loadingText}>Memuat profil...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#4f46e5" />
 
-      {/* Header dengan Gradient */}
-      <LinearGradient
-        colors={["#4f46e5", "#7c3aed", "#3b82f6"]}
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
+      {/* Header dengan Background */}
+      <View style={styles.header}>
         <Text style={styles.headerTitle}>Profil Saya</Text>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => setIsEditing(!isEditing)}
-        >
-          <Icon name={isEditing ? "close" : "edit"} size={22} color="#fff" />
-        </TouchableOpacity>
-      </LinearGradient>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            disabled={isLoggingOut}
+          >
+            {isLoggingOut ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Icon name="logout" size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => setIsEditing(!isEditing)}
+          >
+            <Icon name={isEditing ? "close" : "edit"} size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -237,10 +423,7 @@ const AccountScreen = () => {
         >
           <View style={styles.avatarContainer}>
             <Image source={{ uri: user.photo }} style={styles.avatar} />
-            <LinearGradient
-              colors={["rgba(79, 70, 229, 0.8)", "rgba(59, 130, 246, 0.8)"]}
-              style={styles.avatarOverlay}
-            />
+            <View style={styles.avatarOverlay} />
             {isEditing && (
               <TouchableOpacity
                 style={styles.editPhoto}
@@ -252,11 +435,6 @@ const AccountScreen = () => {
           </View>
 
           <Text style={styles.userName}>{user.name}</Text>
-          <Text style={styles.userBio}>{user.bio}</Text>
-          <View style={styles.locationContainer}>
-            <Icon name="location-on" size={16} color="#6b7280" />
-            <Text style={styles.userLocation}>{user.location}</Text>
-          </View>
         </Animated.View>
 
         {/* Stats Card */}
@@ -322,20 +500,44 @@ const AccountScreen = () => {
             icon="phone"
             error={validationErrors.phone}
           />
+        </Animated.View>
 
-          <InputField
-            label="Bio"
-            value={user.bio}
-            onChangeText={(text) => setUser({ ...user, bio: text })}
-            icon="info"
-          />
+        {/* Logout Card - Always visible */}
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <Text style={styles.sectionTitle}>Pengaturan Akun</Text>
 
-          <InputField
-            label="Lokasi"
-            value={user.location}
-            onChangeText={(text) => setUser({ ...user, location: text })}
-            icon="location-on"
-          />
+          <TouchableOpacity
+            style={styles.logoutCard}
+            onPress={handleLogout}
+            disabled={isLoggingOut}
+          >
+            <View style={styles.logoutCardContent}>
+              <View style={styles.logoutIconContainer}>
+                {isLoggingOut ? (
+                  <ActivityIndicator size="small" color="#ef4444" />
+                ) : (
+                  <Icon name="logout" size={24} color="#ef4444" />
+                )}
+              </View>
+              <View style={styles.logoutTextContainer}>
+                <Text style={styles.logoutTitle}>
+                  {isLoggingOut ? "Sedang Logout..." : "Keluar dari Akun"}
+                </Text>
+                <Text style={styles.logoutSubtitle}>
+                  Anda akan diarahkan ke halaman login
+                </Text>
+              </View>
+              <Icon name="chevron-right" size={24} color="#9ca3af" />
+            </View>
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Action Buttons */}
@@ -351,10 +553,7 @@ const AccountScreen = () => {
           >
             <TouchableOpacity
               style={styles.cancelButton}
-              onPress={() => {
-                setIsEditing(false);
-                setValidationErrors({});
-              }}
+              onPress={handleCancel}
             >
               <Text style={styles.cancelButtonText}>Batal</Text>
             </TouchableOpacity>
@@ -364,10 +563,7 @@ const AccountScreen = () => {
               onPress={handleSave}
               disabled={isLoading}
             >
-              <LinearGradient
-                colors={["#4f46e5", "#3b82f6"]}
-                style={styles.saveButtonGradient}
-              >
+              <View style={styles.saveButtonGradient}>
                 {isLoading ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
@@ -376,7 +572,7 @@ const AccountScreen = () => {
                     <Text style={styles.saveButtonText}>Simpan</Text>
                   </>
                 )}
-              </LinearGradient>
+              </View>
             </TouchableOpacity>
           </Animated.View>
         )}
@@ -393,26 +589,49 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
   },
 
+  centered: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#6b7280",
+  },
+
   header: {
-    paddingVertical: 50,
+    paddingVertical: 25,
     paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingTop: 45,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    elevation: 8,
-    shadowColor: "#4f46e5",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    elevation: 6,
+    backgroundColor: "#3b82f6",
+    shadowColor: "#3b82f6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
   headerTitle: {
     color: "#fff",
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "bold",
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+  },
+  headerButtons: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  logoutButton: {
+    backgroundColor: "rgba(239, 68, 68, 0.2)",
+    padding: 10,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
   },
   editButton: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
@@ -424,22 +643,23 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     padding: 20,
+    paddingTop: 30,
     paddingBottom: 100,
   },
 
   avatarWrapper: {
     alignItems: "center",
-    marginTop: -60,
-    marginBottom: 30,
+    marginTop: -15,
+    marginBottom: 25,
   },
   avatarContainer: {
     position: "relative",
   },
   avatar: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 5,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 4,
     borderColor: "#fff",
   },
   avatarOverlay: {
@@ -448,45 +668,29 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderRadius: 70,
-    opacity: 0.1,
+    borderRadius: 60,
+    backgroundColor: "rgba(79, 70, 229, 0.1)",
   },
   editPhoto: {
     position: "absolute",
-    bottom: 5,
-    right: 5,
+    bottom: 2,
+    right: 2,
     backgroundColor: "#4f46e5",
-    borderRadius: 25,
-    padding: 12,
-    elevation: 6,
+    borderRadius: 20,
+    padding: 10,
+    elevation: 4,
     shadowColor: "#4f46e5",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowRadius: 3,
   },
 
   userName: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "bold",
     color: "#1f2937",
-    marginTop: 15,
+    marginTop: 12,
     textAlign: "center",
-  },
-  userBio: {
-    fontSize: 16,
-    color: "#6b7280",
-    marginTop: 5,
-    textAlign: "center",
-  },
-  locationContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  userLocation: {
-    fontSize: 14,
-    color: "#6b7280",
-    marginLeft: 4,
   },
 
   statsCard: {
@@ -537,6 +741,42 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#1f2937",
     marginBottom: 20,
+  },
+
+  // Logout Card Styles
+  logoutCard: {
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#fee2e2",
+    backgroundColor: "#fefefe",
+    overflow: "hidden",
+  },
+  logoutCardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+  },
+  logoutIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#fee2e2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 15,
+  },
+  logoutTextContainer: {
+    flex: 1,
+  },
+  logoutTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1f2937",
+    marginBottom: 2,
+  },
+  logoutSubtitle: {
+    fontSize: 14,
+    color: "#6b7280",
   },
 
   field: {
@@ -610,6 +850,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    backgroundColor: "#4f46e5",
   },
   saveButtonText: {
     color: "#fff",

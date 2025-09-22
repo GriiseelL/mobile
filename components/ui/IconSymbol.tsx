@@ -20,7 +20,13 @@ const MAPPING = {
   "chevron.right": "chevron-right",
   "box.fill": "inventory",
   "tag.fill": "category",
+  "point-of-sale": "point-of-sale", // kasir
+  "person": "person", // akun
+  // atau fallback tanda tanya:
+  // "point-of-sale": "help",
+  // "person": "help-outline",
 };
+
 
 /**
  * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.

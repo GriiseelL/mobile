@@ -2,7 +2,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // import axios from "axios";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import api from "../src/api/api";
 import {
   Alert,
   Dimensions,
@@ -17,6 +16,7 @@ import {
 } from "react-native";
 import IconFeather from "react-native-vector-icons/Feather";
 import IconCommunity from "react-native-vector-icons/MaterialCommunityIcons";
+import api from "../src/api/api";
 
 const { width, height } = Dimensions.get("window");
 
@@ -65,11 +65,23 @@ const Login = () => {
         password: formData.password,
       };
 
-    const response = await api.post("/api/auth/login", payload);
+      const response = await api.post("/api/auth/login", payload);
       const { status, user, token, message } = response.data;
 
-      if (status && token) {
-        await AsyncStorage.setItem("token", token); // simpan token
+      if (status && token && user) {
+        // simpan token
+        await AsyncStorage.setItem("token", token);
+
+        // simpan user (supaya bisa dipakai di AccountScreen)
+        await AsyncStorage.setItem(
+          "user",
+          JSON.stringify({
+            id: user.id,
+            uuid: user.uuid,
+            name: user.name,
+            email: user.email,
+          })
+        );
 
         router.replace("/DashboardPOS");
       } else {

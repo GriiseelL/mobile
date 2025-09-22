@@ -1,21 +1,23 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  ScrollView,
-  RefreshControl,
-  Alert,
-  ActivityIndicator,
-  SafeAreaView,
-  StatusBar,
-  TextInput,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import api from "@/src/api/api";
+import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
+import * as Print from "expo-print";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 const TransactionHistory = () => {
   const [transactions, setTransactions] = useState([]);
@@ -265,7 +267,132 @@ const TransactionHistory = () => {
     return matchesSearch && matchesFilter;
   });
 
-  // Filter buttons
+  const downloadPDF = async () => {
+    if (!transactions || transactions.length === 0) {
+      Alert.alert("Info", "Tidak ada transaksi untuk diunduh");
+      return;
+    }
+
+    try {
+      // Ambil detail tiap transaksi + normalisasi field produk
+      const transactionsWithDetails = await Promise.all(
+        transactions.map(async (trx) => {
+          let details = trx.productDetails;
+
+          if (!details) {
+            const fetched = await fetchTransactionDetail(trx.id);
+            details = fetched?.transaction_product || fetched || [];
+          }
+
+          // ✅ Normalisasi supaya konsisten
+          const normalized = (details || []).map((p) => ({
+            name: p.product_name || p.name || "-",
+            price: parseFloat(p.product_price || p.price || 0),
+            quantity: parseInt(p.quantity || 1),
+          }));
+
+          return { ...trx, productDetails: normalized };
+        })
+      );
+
+      // HTML PDF
+      const html = `
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { font-size: 20px; text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 6px; font-size: 12px; text-align: left; vertical-align: top; }
+            th { background: #f1f5f9; }
+            .subtable { margin: 6px 0 0 10px; width: 95%; border: 1px solid #ccc; }
+            .subtable th, .subtable td { font-size: 11px; padding: 4px; }
+          </style>
+        </head>
+        <body>
+          <h1>Laporan Semua Transaksi</h1>
+          <table>
+            <tr>
+              <th>Kode</th>
+              <th>Kasir</th>
+              <th>Metode</th>
+              <th>Tanggal</th>
+              <th>Total</th>
+              <th>Detail Barang</th>
+            </tr>
+            ${transactionsWithDetails
+              .map(
+                (trx) => `
+              <tr>
+                <td>${trx.transaction_code || "-"}</td>
+                <td>${trx.seller || "-"}</td>
+                <td>${trx.metode_pembayaran || "-"}</td>
+                <td>${formatDate(trx.created_at)}</td>
+                <td>${formatCurrency(trx.total || 0)}</td>
+                <td>
+                  <table class="subtable">
+                    <tr>
+                      <th>Nama</th>
+                      <th>Qty</th>
+                      <th>Harga</th>
+                      <th>Subtotal</th>
+                    </tr>
+                    ${(trx.productDetails || [])
+                      .map(
+                        (p) => `
+                        <tr>
+                          <td>${p.name}</td>
+                          <td>${p.quantity}</td>
+                          <td>${formatCurrency(p.price)}</td>
+                          <td>${formatCurrency(p.price * p.quantity)}</td>
+                        </tr>
+                      `
+                      )
+                      .join("")}
+                  </table>
+                </td>
+              </tr>
+            `
+              )
+              .join("")}
+          </table>
+        </body>
+      </html>
+    `;
+
+      // Buat file PDF
+      const { uri } = await Print.printToFileAsync({ html });
+
+      // Simpan ke folder SAF
+      const permissions =
+        await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!permissions.granted) {
+        Alert.alert("Ditolak", "Izin akses penyimpanan ditolak ❌");
+        return;
+      }
+
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const fileName = `laporan-transaksi-${Date.now()}.pdf`;
+      const newUri = await FileSystem.StorageAccessFramework.createFileAsync(
+        permissions.directoryUri,
+        fileName,
+        "application/pdf"
+      );
+
+      await FileSystem.writeAsStringAsync(newUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      Alert.alert("Sukses", "PDF berhasil disimpan ✅");
+    } catch (err) {
+      console.error("Gagal buat PDF:", err);
+      Alert.alert("Error", "Gagal membuat PDF ❌");
+    }
+  };
+
   const FilterButtons = () => (
     <View style={styles.filterContainer}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -547,6 +674,11 @@ const TransactionHistory = () => {
         <Text style={styles.headerSubtitle}>
           {transactions.length} transaksi ditemukan
         </Text>
+
+        <TouchableOpacity style={styles.downloadButton} onPress={downloadPDF}>
+          <Ionicons name="download" size={20} color="#fff" />
+          <Text style={styles.downloadButtonText}>Download PDF</Text>
+        </TouchableOpacity>
       </View>
 
       <SearchBar />
@@ -904,6 +1036,21 @@ const styles = StyleSheet.create({
     color: "#999",
     marginTop: 12,
     textAlign: "center",
+  },
+  downloadButton: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#007bff",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  downloadButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    marginLeft: 8,
   },
 });
 

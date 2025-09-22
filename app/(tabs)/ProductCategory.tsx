@@ -20,6 +20,8 @@ import {
   MediaType,
 } from "react-native-image-picker";
 import Ionicons from "react-native-vector-icons/Ionicons";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback } from "react";
 import Icon from "react-native-vector-icons/MaterialIcons";
 
 const ProductCategory = ({ navigation }) => {
@@ -79,12 +81,18 @@ const ProductCategory = ({ navigation }) => {
     "monitor",
   ];
 
-  useEffect(() => {
+useFocusEffect(
+  useCallback(() => {
+    // ambil ulang data kategori
     fetchCategories();
+
+    // kalau lagi di tab produk, ambil ulang produk
     if (currentView === "products") {
       fetchProducts();
     }
-  }, [currentView]);
+  }, [currentView])
+);
+
 
   // Category Icon Management
   const saveCategoryIcon = async (categoryId, iconName) => {
@@ -404,7 +412,7 @@ const ProductCategory = ({ navigation }) => {
         });
       }
 
-      const response = await api.post("api/product/items", formData, {
+      const response = await api.post("api/product/items/store", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
