@@ -63,6 +63,15 @@ export default function TabLayout() {
           ),
         }}
       />
+        <Tabs.Screen
+          name="AddStock"
+          options={{
+            title: "Stock",
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={28} name="plus.box.fill" color={color} />
+            ),
+          }}
+        />
       <Tabs.Screen
         name="AccountScreen"
         options={{

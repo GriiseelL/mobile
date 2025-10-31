@@ -2,7 +2,6 @@ import api from "@/src/api/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ToastAndroid } from "react-native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -12,15 +11,14 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  TextInput, ToastAndroid, TouchableOpacity,
+  View
 } from "react-native";
 import ThermalPrinterModule from "react-native-thermal-printer";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { WebView } from "react-native-webview";
 
-const CashierScreen = ({ navigation }) => {
+const CashierScreen = () => {
   const router = useRouter();
   const [user, setUser] = useState(null); // ✅ state user
   const [products, setProducts] = useState([]);
@@ -410,22 +408,36 @@ const CashierScreen = ({ navigation }) => {
           setShowCart(false);
           fetchProducts();
         }
-      } else {
-        // 🔹 transaksi non-cash → redirect ke WebView
-        const response = await api.post("/api/xendit/store", transactionData, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+     } else {
+  const response = await api.post("/api/xendit/store", transactionData, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
-        if (response.data.success) {
-          router.push({
-            pathname: "/PaymentScreen",
-            params: {
-              url: response.data.payment_url,
-              transaction_code: response.data.transaction_code,
-            },
-          });
-        }
-      }
+  console.log("Response Xendit:", response.data);
+
+  if (response.data.success) {
+    const paymentUrl = response.data.payment_url;
+    const trxCode = response.data.transaction_code;
+    
+    console.log("Payment URL:", paymentUrl);
+    console.log("Transaction Code:", trxCode);
+    
+    if (!paymentUrl) {
+      Alert.alert("Error", "URL pembayaran tidak ditemukan");
+      return;
+    }
+
+    router.push({
+      pathname: "/PaymentScreen",
+      params: {
+        url: paymentUrl,
+        transaction_code: trxCode,
+      },
+    });
+  } else {
+    Alert.alert("Error", "Gagal membuat transaksi");
+  }
+} 
     } catch (error) {
       console.error("Transaction error:", error.response?.data || error);
       Alert.alert("Error", "Gagal memproses transaksi");
@@ -718,8 +730,8 @@ const CashierScreen = ({ navigation }) => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} color="#fff" />
+            <TouchableOpacity onPress={() => router.back()}>
+            <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Kasir</Text>
         <TouchableOpacity
@@ -872,29 +884,6 @@ const CashierScreen = ({ navigation }) => {
                         ]}
                       >
                         Transfer
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.paymentButton,
-                        paymentMethod === "qris" && styles.paymentButtonActive,
-                      ]}
-                      onPress={() => setPaymentMethod("qris")}
-                    >
-                      <Icon
-                        name="qr-code"
-                        size={20}
-                        color={paymentMethod === "qris" ? "#fff" : "#6b7280"}
-                      />
-                      <Text
-                        style={[
-                          styles.paymentButtonText,
-                          paymentMethod === "qris" &&
-                            styles.paymentButtonTextActive,
-                        ]}
-                      >
-                        QRIS
                       </Text>
                     </TouchableOpacity>
                   </View>

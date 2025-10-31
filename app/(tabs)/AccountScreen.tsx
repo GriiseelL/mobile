@@ -437,32 +437,6 @@ const AccountScreen = ({ userId = null, navigation }) => {
           <Text style={styles.userName}>{user.name}</Text>
         </Animated.View>
 
-        {/* Stats Card */}
-        <Animated.View
-          style={[
-            styles.statsCard,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>24</Text>
-            <Text style={styles.statLabel}>Transaksi</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>4.9</Text>
-            <Text style={styles.statLabel}>Rating</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>12</Text>
-            <Text style={styles.statLabel}>Review</Text>
-          </View>
-        </Animated.View>
-
         {/* Form Card */}
         <Animated.View
           style={[

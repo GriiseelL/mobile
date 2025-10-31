@@ -1,7 +1,7 @@
 // Fallback for using MaterialIcons on Android and web.
 
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
+import { SymbolViewProps, SymbolWeight } from 'expo-symbols';
 import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
@@ -22,9 +22,7 @@ const MAPPING = {
   "tag.fill": "category",
   "point-of-sale": "point-of-sale", // kasir
   "person": "person", // akun
-  // atau fallback tanda tanya:
-  // "point-of-sale": "help",
-  // "person": "help-outline",
+  "plus.box.fill": "add-box",
 };
 
 

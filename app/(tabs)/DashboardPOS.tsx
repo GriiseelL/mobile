@@ -1,5 +1,5 @@
-import React, { useState } from "react";
 import { router } from "expo-router";
+import React, { useState } from "react";
 import {
   Alert,
   Image,
@@ -16,9 +16,10 @@ import {
 import api from "../../src/api/api";
 // Import vector icons - pilih salah satu sesuai library yang digunakan
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
 import { useFocusEffect } from "@react-navigation/native";
-import { useCallback } from "react";import IconAntDesign from "react-native-vector-icons/AntDesign";
+import axios from "axios";
+import { useCallback } from "react";
+import IconAntDesign from "react-native-vector-icons/AntDesign";
 import IconFeather from "react-native-vector-icons/Feather";
 import IconCommunity from "react-native-vector-icons/MaterialCommunityIcons";
 import Icon from "react-native-vector-icons/MaterialIcons";
@@ -541,24 +542,25 @@ useFocusEffect(
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.quickButton, { backgroundColor: "#ede9fe" }]}
-            onPress={() => router.push("/TransactionHistory")}
-          >
-            <IconCommunity name="chart-line" size={24} color="#8b5cf6" />
-            <Text style={styles.quickText}>Lihat{"\n"}Laporan</Text>
-          </TouchableOpacity>
+  style={[
+    styles.quickButton,
+    {
+      backgroundColor: "#ede9fe",
+      width: 290, // lebar khusus tombol laporan
+      height: 100, // tinggi opsional
+    },
+  ]}
+  onPress={() => router.push("/TransactionHistory")}
+>
+  <IconCommunity name="chart-line" size={24} color="#8b5cf6" />
+  <Text style={styles.quickText}>Lihat{"\n"}Laporan</Text>
+</TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.quickButton, { backgroundColor: "#fbcfe8" }]}
-          >
-            <IconFeather name="users" size={24} color="#ec4899" />
-            <Text style={styles.quickText}>Kelola{"\n"}Staff</Text>
-          </TouchableOpacity>
         </View>
       </View>
 
       {/* Menu Navigasi */}
-      <View style={styles.menuContainer}>
+      {/* <View style={styles.menuContainer}>
         <View style={styles.sectionTitleRow}>
           <IconCommunity name="view-grid" size={20} color="#3b82f6" />
           <Text style={styles.menuTitle}>Menu Utama</Text>
@@ -596,7 +598,7 @@ useFocusEffect(
             <Text style={styles.menuText}>Riwayat</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </View> */}
 
       {/* Add Product Modal */}
       <Modal
@@ -1209,7 +1211,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#e5e7eb",
     paddingTop: 16,
   },
-  urlInput: {
+  urlInput: {  
     borderWidth: 1,
     borderColor: "#d1d5db",
     borderRadius: 8,
